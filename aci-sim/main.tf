@@ -145,15 +145,15 @@ resource "aci_epg_to_domain" "common_dns" {
 
 resource "aci_filter" "web_to_app"{
     tenant_dn = data.aci_tenant.common.id
-    nema = "web-tp-app-filter"
+    name = "web-to-app-filter"
 }
 
 #Fitler for TCP 80
 resource "aci_filter_entry" "web_to_app_80" {
-    filter_dn = aci_filter "web_to_app_80"
+    filter_dn = aci_filter.web_to_app
     name = "tcp-80"
     ether_t = "ip"
-    ip_protocol = "tcp"
+    prot = "tcp"
     d_from_port = "80"
     d_to_port = "80"
 
@@ -164,7 +164,7 @@ resource "aci_filter_entry" "web_to_app_443" {
   filter_dn   = aci_filter.web_to_app.id
   name        = "tcp-443"
   ether_t     = "ip"
-  ip_protocol = "tcp"
+  prot = "tcp"
   d_from_port = "443"
   d_to_port   = "443"
 }
@@ -195,4 +195,23 @@ resource "aci_filter_entry" "app_to_db_5432" {
   filter_dn   = aci_filter.app_to_db.id
   name        = "tcp-5432"
   ether_t     = "ip"
+  prot = "tcp"
+  d_from_port = "5432"
+  d_to_port = "5432"
+}
+
+# The contract this is what the EPGs will reference
+resource "aci_contract" "app_to_db"{
+    tenant_dn = data.aci_tenant.common.id
+    name = "app-to-db"
+    scope = "global"
+}
+#subkect this links the contract to teh filter
+resource "aci_contract_subject" app_to_db{
+    contract_dn = aci_contract.app_to_db.id
+name = "app_to_db_subj"
+relation_vz_rs_subj_filt_att = aci_filter.app_to_db
+}
+
+
 
