@@ -150,7 +150,7 @@ resource "aci_filter" "web_to_app"{
 
 #Fitler for TCP 80
 resource "aci_filter_entry" "web_to_app_80" {
-    filter_dn = aci_filter.web_to_app
+    filter_dn = aci_filter.web_to_app.id
     name = "tcp-80"
     ether_t = "ip"
     prot = "tcp"
@@ -212,6 +212,9 @@ resource "aci_contract_subject" app_to_db{
 name = "app_to_db_subj"
 relation_vz_rs_subj_filt_att = aci_filter.app_to_db
 }
+
+#YOU FORGOT TO APPLY THE CONTRACT TO THE EPG THICKO!
+
 
 # ── L3Out ───
 #links to the common vrf to provide L3 gateway to hosts
