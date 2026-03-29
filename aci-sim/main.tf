@@ -132,8 +132,8 @@ resource "aci_application_epg" "dns_epg" {
   name                   = var.epg_name
   relation_fv_rs_bd      = aci_bridge_domain.dns_bd.id
 }
-
-resource "aci_epg_to_domain" "common_dns" {
+#bind domain to epg
+resource "aci_epg_to_domain" "bind_epg_to_domain" {
   application_epg_dn = aci_application_epg.dns_epg.id
   tdn                = aci_physical_domain.sim_physical_dom.id
 }
@@ -183,6 +183,8 @@ resource "aci_contract_subject" "web_to_app" {
   relation_vz_rs_subj_filt_att = [aci_filter.web_to_app.id]
 }
 
+
+
 #  Contract 2 2: app-to-db
 # Allows app EPGs to reach db EPGs on TCP 5432 this will be published to PROD tenant
 
@@ -210,17 +212,103 @@ resource "aci_contract" "app_to_db"{
 resource "aci_contract_subject" app_to_db{
     contract_dn = aci_contract.app_to_db.id
 name = "app_to_db_subj"
-relation_vz_rs_subj_filt_att = aci_filter.app_to_db
+relation_vz_rs_subj_filt_att = [aci_filter.app_to_db.id]
 }
 
 #YOU FORGOT TO APPLY THE CONTRACT TO THE EPG THICKO!
 
+# Contract 3 any-to-dns
+# Allows any EPG to reach the DNS EPG in common the dns epg will provide the contract
 
-# ── L3Out ───
-#links to the common vrf to provide L3 gateway to hosts
-resource "aci_l3_outside" "common_l3out" {
-  tenant_dn = data.aci_tenant.common.id
-  name      = "common-l3out"
+resource "aci_filter" "any_to_dns"{
+    tenant_dn = data.aci_tenant.common.id
+    name = "any-to-dns-filter"
+}
+
+resource "aci_filter_entry" "any_to_dns_53"{
+    filter_dn = aci_filter.any_to_dns.id
+    name = "udp-53"
+    ether_t = "ip"
+    prot = "udp"
+    d_from_port = "53"
+    d_to_port = "53"
+}
+#The contract, this is what the EPGs will reference
+
+resource "aci_contract" "any_to_dns"{
+    tenant_dn = data.aci_tenant.common.id
+    name = "any-to-dns"
+    scope = "global"
+}
+#subject links the contract to the filter
+resource "aci_contract_subject" any_to_dns{
+    contract_dn = aci_contract.any_to_dns.id
+    name = "any_to_dns_subj"
+    relation_vz_rs_subj_filt_att = [aci_filter.any_to_dns.id]
+}
+
+# ── DNS EPG contract binding
+# bind the contracts to the EPGS
+
+resource "aci_epg_to_contract" "dns_provides_dns" {
+  application_epg_dn = aci_application_epg.dns_epg.id
+
+contract_dn        = aci_contract.any_to_dns.id
+  contract_type      = "provider"
+}
+
+# ── L3Out 
+
+resource "aci_l3_outside" "common_l3out"{
+    tenant_dn = data.aci_tenant.common.id
+    name = "common-l3out"
+    # Only traffic from common_vrf will use this exit point.
+  relation_l3ext_rs_ectx = aci_vrf.common_vrf.id
+}
+
+# ── lgical node profile
+resource "aci_logical_node_profile" "common_l3out_nodes" {
+  l3_outside_dn = aci_l3_outside.common_l3out.id
+  name          = "node_profile"
+}
+
+#── binds the node profile to the leaf
+resource "aci_logical_node_to_fabric_node" "common_l3out_node" {
+  logical_node_profile_dn = aci_logical_node_profile.common_l3out_nodes.id
+  #NEED TO UNDERSTAND MORE OF THIS $
+  tdn    = "topology/pod-1/node-${var.leaf_id}"
+  rtr_id = var.router_id
+}
+
+# ─ Logical interface profile the interaces that the L3out will use
+resource "aci_logical_interface_profile" "common_l3out_intf" {
+  logical_node_profile_dn = aci_logical_node_profile.common_l3out_nodes.id
+  name                    = "intf_profile"
+}
+# ── External EPG
+# Represents everything outside the fabric
+
+resource "aci_external_network_instance_profile" "common_ext_epg" {
+  l3_outside_dn = aci_l3_outside.common_l3out.id
+  name          = "ext_epg"
+}
 
 
+# ── External subnet
+# 0.0.0.0/0 means this external EPG represents all external
 
+resource "aci_l3_ext_subnet" "common_ext_subnet" {
+  external_network_instance_profile_dn = aci_external_network_instance_profile.common_ext_epg.id
+  ip                                   = "0.0.0.0/0"
+  scope                                = ["import-security"]
+}
+
+# ── Static test route
+
+# If 172.16.99.0/24 appears the L3Out and VRF stitching is correct.
+
+resource "aci_l3_ext_subnet" "common_test_route" {
+  external_network_instance_profile_dn = aci_external_network_instance_profile.common_ext_epg.id
+  ip                                   = "172.16.99.0/24"
+  scope                                = ["import-security"]
+}
