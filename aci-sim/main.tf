@@ -213,5 +213,11 @@ name = "app_to_db_subj"
 relation_vz_rs_subj_filt_att = aci_filter.app_to_db
 }
 
+# ── L3Out ───
+#links to the common vrf to provide L3 gateway to hosts
+resource "aci_l3_outside" "common_l3out" {
+  tenant_dn = data.aci_tenant.common.id
+  name      = "common-l3out"
+
 
 
